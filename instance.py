@@ -1,7 +1,6 @@
 #!/usr/bin/python
 """
-	Boto instance class
-	-------------------
+	python version- 2.7.6
 	This class handles deregistering,restarting a instances and registering the 	instances to load balancer.
 	Displays all instances in a region along with the state of operation.
 """
@@ -74,7 +73,7 @@ class InstanceAction:
 					time.sleep(10)
 					load_balancer.register_instances(instance.id)
 					self.lgr.info(instance.id + " registered")
-					time.sleep(10)
+					time.sleep(20)
 					while "InService" not in str(load_balancer.get_instance_health(instance.id)):						
 						self.lgr.info(instance.id)
 						time.sleep(10)
