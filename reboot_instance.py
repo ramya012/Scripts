@@ -1,11 +1,9 @@
 #!/usr/bin/python
 """
 	python version- 2.7.6
-	This class handles deregistering,restarting a instances and registering the 	instances to load balancer.
-	Displays all instances in a region along with the state of operation.
+	This class handles rebooting a instances and checking for their health status behind respective load balancer.
 """
 import sys
-from pprint import pprint
 import boto.ec2
 import ConfigParser
 import logging
@@ -13,7 +11,7 @@ import os
 import time
 import boto.ec2.elb
 import boto.utils
-
+ 
 class InstanceAction:
 	def __init__(self):
 		"""
@@ -21,9 +19,11 @@ class InstanceAction:
 		"""
 		self.lgr = logging.getLogger('MyLogger')
 		self.lgr.setLevel(logging.DEBUG)
-		file_handler = logging.FileHandler('instanceLogger.log')
+		file_handler = logging.FileHandler('instanceLogger1.log')
 		self.lgr.addHandler(file_handler)
 		self.load_from_config("config.ini")
+		self.inservice_timeout = 0
+		self.outofservice_timeout = 0
 		
 	#@classmethod
 	def load_from_config(self, path=None):
@@ -51,7 +51,7 @@ class InstanceAction:
 			self.lgr.error(str(message))
 			sys.exit(0)
 		self.lgr.info("connected to "+ str(self.region))
-
+ 
 	#@classmethod
 	def elb_connection(self):
 		"""
@@ -63,20 +63,19 @@ class InstanceAction:
 			self.lgr.error(message)
 			sys.exit(0)
 		self.lgr.info("connected to region")
-
 		#validate load balancers
 		self.validate_loadBalancers()
-
-		for lb in self.loadBalancers_fromconfig:
-			load_balancer = self.elb.get_all_load_balancers(load_balancer_names=lb.split())[0]			
+ 		for lb in self.loadBalancers_fromconfig:
+			load_balancer = self.elb.get_all_load_balancers(load_balancer_names=lb.split())[0]
+ 			#calculate health timeouts
+			self.calulate_elb_health_timeout(load_balancer.health_check.interval, load_balancer.health_check.healthy_threshold, 'InService')
+			self.calulate_elb_health_timeout(load_balancer.health_check.interval, load_balancer.health_check.unhealthy_threshold, 'OutOfService')
 			for instance in load_balancer.instances:				
 				#health check - in service
-				if "InService" in str(load_balancer.get_instance_health(instance.id)):
-					
+				if "InService" in str(load_balancer.get_instance_health(instance.id)):					
 					self.reboot_instance(instance.id)
 					time.sleep(30)
 					self.await_elb_instance_state(load_balancer, instance.id, 'OutOfService')
-					time.sleep(20)
 					self.await_elb_instance_state(load_balancer, instance.id, 'InService')
 				else:
 					self.lgr.info(instance.id + " Instance is out of service")
@@ -86,12 +85,33 @@ class InstanceAction:
 		"""
 		wait for an ELB to change the state
 		"""
-		print instanceId
+		initialization_timeOut = 0
+		if awaited_state == 'InService':
+			final_timeOut = self.inservice_timeout
+		else:
+			final_timeOut = self.outofservice_timeout
+			
 		while awaited_state not in str(lb.get_instance_health(instanceId)):
-			time.sleep(20)
-			self.lgr.info(instanceId + " Instance is waiting for " + awaited_state)
+			if initialization_timeOut < final_timeOut :
+				time.sleep(20)
+				initialization_timeOut = initialization_timeOut + 20
+				self.lgr.info(instanceId + " Instance is waiting for " + awaited_state)
+			else:				
+				instance_statuscheck = self.conn.get_all_instance_status(instanceId)
+				self.lgr.info(instanceId + "  instance status: " + str(instance_statuscheck[0].instance_status) + "System status: " + str(instance_statuscheck[0].system_status))
+				return
 		self.lgr.info(instanceId + " Instance is back into " + awaited_state)
-
+	
+	#@classmethod
+	def calulate_elb_health_timeout(self, interval, threshold, type):
+		"""
+		Calculating the healthy and unhealthy time_outs
+		"""
+		if type == 'InService':
+			self.inservice_timeout = interval * threshold
+		elif type == 'OutOfService':
+			self.outofservice_timeout = interval * threshold
+		
 	#@classmethod
 	def validate_loadBalancers(self):
 		"""
@@ -101,11 +121,11 @@ class InstanceAction:
 		elbs_names = [elbs.name for elbs in loadBalancers_throughApi]
 		for lbs in self.loadBalancers_fromconfig:
 			if lbs in elbs_names:
-				self.lgr.info(lbs + " validated")
+				self.lgr.info(lbs + " is validated")
 			else:
-				self.lgr.info(lbs + " not validated")
+				self.lgr.info(lbs + " is not validated")
 				sys.exit(0)
-
+ 
 	#@classmethod
 	def reboot_instance(self, instanceId=None):
 		"""
@@ -123,8 +143,7 @@ class InstanceAction:
 		except Exception, message:
 			self.lgr.error(str(message))
 			sys.exit(0)
-		#self.lgr.info(instanceId + " is rebooted")
-
+		 
 # create object
 i = InstanceAction()
 i.elb_connection()
