@@ -19,7 +19,7 @@ class InstanceAction:
 		"""
 		self.lgr = logging.getLogger('MyLogger')
 		self.lgr.setLevel(logging.DEBUG)
-		file_handler = logging.FileHandler('instanceLogger1.log')
+		file_handler = logging.FileHandler('ElbLogger.log')
 		self.lgr.addHandler(file_handler)
 		self.load_from_config("config.ini")
 		self.inservice_timeout = 0
@@ -75,8 +75,9 @@ class InstanceAction:
 				if "InService" in str(load_balancer.get_instance_health(instance.id)):					
 					self.reboot_instance(instance.id)
 					time.sleep(30)
-					self.await_elb_instance_state(load_balancer, instance.id, 'OutOfService')
-					self.await_elb_instance_state(load_balancer, instance.id, 'InService')
+					getVal = self.await_elb_instance_state(load_balancer, instance.id, 'OutOfService')
+					if getVal:
+						self.await_elb_instance_state(load_balancer, instance.id, 'InService')
 				else:
 					self.lgr.info(instance.id + " Instance is out of service")
 	
@@ -99,8 +100,9 @@ class InstanceAction:
 			else:				
 				instance_statuscheck = self.conn.get_all_instance_status(instanceId)
 				self.lgr.info(instanceId + "  instance status: " + str(instance_statuscheck[0].instance_status) + "System status: " + str(instance_statuscheck[0].system_status))
-				return
+				return False
 		self.lgr.info(instanceId + " Instance is back into " + awaited_state)
+		return True
 	
 	#@classmethod
 	def calulate_elb_health_timeout(self, interval, threshold, type):
