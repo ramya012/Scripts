@@ -1,5 +1,10 @@
 #!/usr/bin/python
+__author__ ='ramya'
+__version__ ='1.0'
 
+"""
+This class handles, Creating the subnets and maintain the log file 
+"""
 import json
 import boto
 import boto.vpc
@@ -8,27 +13,28 @@ import time
 import sys
 import logging
 import os
-import pprint
  
 class create_env:
-	environment = "test"
+	#change the environment value as per requirement
+	environment = "Prod"
 	vpcId = None
 	gatewayId = None
 	subnets_Created = {}
-	rTables = {}
+	"""
+	Creating the log file and load the configuration file
+	"""
 	def __init__(self):
 		self.lgr = logging.getLogger('MyLogger')
 		self.lgr.setLevel(logging.DEBUG)
-		file_handler = logging.FileHandler('Ditech.log')
+		file_handler = logging.FileHandler('subnet.log')
 		self.lgr.addHandler(file_handler)
 		self.load_from_config("config.json")
 
+	"""
+	Parse the json configuration file and creating the connection to Vpc
+	"""
 	#@classmethod
 	def load_from_config(self, path=None):
-		"""
-		Load settings from a json file 
-		And define all variables
-		"""
 		#checking the path is empty or not
 		if not path:
 			self.lgr.info("Path for json file is empty")
@@ -43,10 +49,9 @@ class create_env:
 			input = json.load(fp)
 		
 		self.confData = input[self.environment]
-		# load all required fields
 		region = self.confData['region']
 			
-		#connecting to region
+		#connecting to vpc
 		try:
 			self.conn = boto.vpc.connect_to_region(region)
 		except Exception, message:
@@ -54,6 +59,10 @@ class create_env:
 			sys.exit(0)
 		self.lgr.info("connected to "+ str(region))
 
+	"""
+	Get all Vpcs as Cidr and creating the gateway
+	"""
+	#@classmethod
 	def get_VPCConnection(self):
 		vpcCidr = self.confData['VPC_Cidr']			
 		try:
@@ -70,6 +79,10 @@ class create_env:
 		except Exception, message:
 			self.lgr.error(str(message))
 
+	"""
+	Creating the VPC
+	"""
+	#@classmethod
 	def createVPC(self):
 		vpcCidr = self.confData['VPC_Cidr']	
 		account = self.confData['account']
@@ -77,9 +90,14 @@ class create_env:
 		vpc = self.conn.create_vpc(vpcCidr)
 		vpcName = account + '_' + region.upper()
 		vpc.add_tag('Name',vpcName)
+		self.lgr.info("Created the VPC: "+ vpcName)
 		self.vpcId = vpc.id
 		self.createGateway()
-
+	
+	"""
+	Creating Gateway and attaching to the VPC
+	"""
+	#@classmethod
 	def createGateway(self):
 		if self.vpcId:
 			igw = self.conn.create_internet_gateway()
@@ -88,7 +106,10 @@ class create_env:
 			self.conn.attach_internet_gateway(self.gatewayId,self.vpcId)
 		else:
 			self.createVPC()
-	
+
+	"""
+	Creating the subnet
+	"""	
 	#@classmethod	
 	def createSubnet(self):
 		subnets = self.confData['subnets']
@@ -98,59 +119,29 @@ class create_env:
 			tagName = i['name']
 			routeAssosciate = i['route_associate']
 			exist = self.checkSubnet(subnet)
-			#print exist
 			if exist is None:
 				s1 = self.conn.create_subnet(self.vpcId, subnet, zone)
-				#print s1
-				self.lgr.info("created the subnet"+ tagName)			
+				self.lgr.info("created the subnet "+ tagName)			
 				time.sleep(2)
 				s1.add_tag('Name', tagName)
 				time.sleep(2)
 			else:
 				self.lgr.info("Already existed"+ tagName)
 				s1 = exist
-			#association
 						
-			self.subnets_Created[routeAssosciate] = s1.id
-		#for item in self.subnets_Created:
-		#	print item.id			
-			
+			self.subnets_Created[routeAssosciate] = s1.id	
+
+	"""
+	Validation of Subnet
+	"""
 	#@classmethod
 	def checkSubnet(self,sub):		
 		subnet = self.conn.get_all_subnets(filters={"cidrBlock" : sub})
 		if len(subnet):
 			return subnet[0]
 		else:
-			return None
-	
-	#@classmethod
-	def createRouteTable(self):
-		routeTables = self.confData['route_tables']		
-		
-		check_Tables = self.conn.get_all_route_tables(filters={"vpc-id" : self.vpcId})[0]
-		print(check_Tables['name'])
-		#for table in check_Tables.routes:
-		#	print(table)
-		sys.exit(0)
-		
-		for name in routeTables:
-			rt = self.conn.create_route_table(self.vpcId)
-			rt.add_tag('Name',name)
-			self.rTables[name] = rt.id		
-		#print rTables
-		
-	def associateRouteWithSubnet(self):
-		for name, id in self.subnets_Created.items():
-			subnetId = id
-			routeId = self.rTables[name]
-			print routeId
-			self.conn.associate_route_table(routeId, subnetId)
-			
+			return None			
 	
 i = create_env()
 i.get_VPCConnection()
 i.createSubnet()
-i.createRouteTable()
-i.associateRouteWithSubnet()
-
-
