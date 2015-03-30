@@ -3,7 +3,7 @@ __author__ ='ramya'
 __version__ ='1.0'
 
 """
-This class handles, Creating the subnets and maintain the log file 
+This class handles, stopping and starting environment and maintain the log file 
 """
 import argparse
 import json
