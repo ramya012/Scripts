@@ -4,6 +4,7 @@ __version__ ='1.0'
 
 """
 This class handles, stopping and starting environment and maintain the log file 
+Requires: A config.json file, which contains the instances ids
 """
 import argparse
 import json
